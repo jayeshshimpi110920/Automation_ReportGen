@@ -150,27 +150,33 @@ def parse_report(xml_path):
         vuln_cat = clean_code(vuln_cat)   # remove underscores in category too
 
         results = finding.findall(".//result")
+        inst_count = len(results)
 
-        for result in results:
-            # Vulnerability Name: from <tool code="...">
-            tool_el   = result.find("tool")
-            code_raw  = tool_el.attrib.get("code", "") if tool_el is not None else ""
-            vuln_name = clean_code(code_raw) if code_raw else vuln_cat
+        if sec == "SCA":
+            # SCA: Vulnerability Name = ComponentIdentifier from first result
+            first_result = results[0] if results else None
+            av = first_result.find(".//Additional-value[@key='ComponentIdentifier']") if first_result is not None else None
+            vuln_name = av.text.strip() if av is not None and av.text else vuln_cat
 
-            # Component identifier
-            av = result.find(".//Additional-value[@key='ComponentIdentifier']")
-            comp = av.text.strip() if av is not None and av.text else ""
-
-            # For SCA group by vuln_name (which maps to component code)
-            # For SAST/IaC group by vuln_name (tool code) — this is unique per type
             gkey = (sec, vuln_name, vuln_cat, severity)
-            groups[gkey]["instances"]  += 1
-            groups[gkey]["status"]      = status
-            groups[gkey]["rem_date"]    = rem_date
-            groups[gkey]["overdue"]     = overdue_flag
-            groups[gkey]["first_seen"]  = first_seen
-            if not groups[gkey]["component"]:
-                groups[gkey]["component"] = comp
+            groups[gkey]["instances"] += inst_count
+            groups[gkey]["status"]     = status
+            groups[gkey]["rem_date"]   = rem_date
+            groups[gkey]["overdue"]    = overdue_flag
+            groups[gkey]["first_seen"] = first_seen
+        else:
+            # SAST / IaC: Vulnerability Name = tool code, group per result
+            for result in results:
+                tool_el  = result.find("tool")
+                code_raw = tool_el.attrib.get("code", "") if tool_el is not None else ""
+                vuln_name = clean_code(code_raw) if code_raw else vuln_cat
+
+                gkey = (sec, vuln_name, vuln_cat, severity)
+                groups[gkey]["instances"] += 1
+                groups[gkey]["status"]     = status
+                groups[gkey]["rem_date"]   = rem_date
+                groups[gkey]["overdue"]    = overdue_flag
+                groups[gkey]["first_seen"] = first_seen
 
     sev_rank = {s: i for i, s in enumerate(SEV_ORDER)}
     sections = {"SAST": [], "SCA": [], "IaC": []}
@@ -179,7 +185,6 @@ def parse_report(xml_path):
         sections[sec].append({
             "vuln_cat":  vuln_cat,
             "vuln_name": vuln_name,
-            "component": data["component"],
             "severity":  severity,
             "status":    data["status"],
             "instances": data["instances"],
@@ -234,7 +239,6 @@ def build_detail_table(findings):
             f'<td style="padding:5px 8px;border:1px solid #ddd;text-align:center;">{i}</td>'
             f'<td style="padding:5px 8px;border:1px solid #ddd;">{f["vuln_cat"]}</td>'
             f'<td style="padding:5px 8px;border:1px solid #ddd;">{f["vuln_name"]}</td>'
-            f'<td style="padding:5px 8px;border:1px solid #ddd;">{f["component"]}</td>'
             f'<td style="padding:5px 8px;border:1px solid #ddd;text-align:center;">{f["severity"].title()}</td>'
             f'<td style="padding:5px 8px;border:1px solid #ddd;text-align:center;">{f["status"]}</td>'
             f'<td style="padding:5px 8px;border:1px solid #ddd;text-align:center;{rem_style}">{f["rem_date"]}</td>'
@@ -248,7 +252,6 @@ def build_detail_table(findings):
         '<th style="padding:5px 8px;border:1px solid #bbb;text-align:center;">S.No.</th>'
         '<th style="padding:5px 8px;border:1px solid #bbb;">Vulnerability Category</th>'
         '<th style="padding:5px 8px;border:1px solid #bbb;">Vulnerability Name</th>'
-        '<th style="padding:5px 8px;border:1px solid #bbb;">Component / Identifier</th>'
         '<th style="padding:5px 8px;border:1px solid #bbb;text-align:center;">Severity</th>'
         '<th style="padding:5px 8px;border:1px solid #bbb;text-align:center;">Status</th>'
         '<th style="padding:5px 8px;border:1px solid #bbb;text-align:center;">Remediation Due Date</th>'
@@ -417,3 +420,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+        
