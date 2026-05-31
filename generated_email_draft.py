@@ -153,13 +153,26 @@ def parse_report(xml_path):
         inst_count = len(results)
 
         if sec == "SCA":
-            # SCA: Vulnerability Name = ComponentIdentifier from first result
+            # SCA: NO grouping — each <finding> = one row
+            # Vulnerability Name from <additional-value key="Component Identifier"> (space) first result
             first_result = results[0] if results else None
-            av = first_result.find(".//Additional-value[@key='ComponentIdentifier']") if first_result is not None else None
-            vuln_name = av.text.strip() if av is not None and av.text else vuln_cat
+            vuln_name = vuln_cat  # fallback
+            if first_result is not None:
+                # Try both capitalisation variants of the tag name
+                candidates = (
+                    first_result.findall(".//Additional-value") +
+                    first_result.findall(".//additional-value")
+                )
+                for node in candidates:
+                    if node.attrib.get("key", "").strip().lower() == "component identifier":
+                        vuln_name = node.text.strip() if node.text else vuln_cat
+                        break
 
-            gkey = (sec, vuln_name, vuln_cat, severity)
-            groups[gkey]["instances"] += inst_count
+            # Use finding id as unique key — no merging
+            finding_id = finding.attrib.get("id", id(finding))
+            gkey = (sec, str(finding_id), vuln_cat, severity)
+            groups[gkey]["instances"]  = inst_count
+            groups[gkey]["vuln_name"]  = vuln_name
             groups[gkey]["status"]     = status
             groups[gkey]["rem_date"]   = rem_date
             groups[gkey]["overdue"]    = overdue_flag
@@ -181,7 +194,9 @@ def parse_report(xml_path):
     sev_rank = {s: i for i, s in enumerate(SEV_ORDER)}
     sections = {"SAST": [], "SCA": [], "IaC": []}
 
-    for (sec, vuln_name, vuln_cat, severity), data in groups.items():
+    for (sec, key2, vuln_cat, severity), data in groups.items():
+        # For SCA vuln_name is stored in data; for SAST/IaC it is the key2 itself
+        vuln_name = data.get("vuln_name", key2)
         sections[sec].append({
             "vuln_cat":  vuln_cat,
             "vuln_name": vuln_name,
@@ -420,4 +435,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+    
